@@ -21,8 +21,21 @@ export class GoogleCalendarUtility {
 	 */
 	public initializeGoogleCalendarSync(): void {
 
-		// nextSyncTokenがプロパティが設定されていない場合、現在の状態でのtokenを取得
-		this._getNewNextSyncToken()
+		try {
+			// nextSyncTokenがプロパティが設定されていない場合、現在の状態でのtokenを取得
+			this._getNewNextSyncToken()
+		}
+		catch (e) {
+			if (
+					e.name === 'GoogleJsonResponseException'
+					&& e.details.code === 410
+					&& e.details.reason === 'fullSyncRequired'
+					&& e.details.location === 'syncToken'
+					&& e.details.message === 'Sync token is no longer valid, a full sync is required.'
+			) {
+				this._properties.deleteProperty(PROP_KEY_PREFIX_SYNC_TOKEN + this._calendarId)
+			}
+		}
 	}
 
 	/**
@@ -78,12 +91,29 @@ export class GoogleCalendarUtility {
 
 	public get eventList(): GoogleAppsScript.Calendar.Schema.Event[] | null {
 		if (this._eventList === null) {
-			let events = Calendar.Events.list(this._calendarId, {
-				syncToken: this._getNextSyncToken(),
-				maxResults: 2500,
-			})
-			this._eventList = events.items
-			this._setNextSyncToken(events.nextSyncToken)
+			try {
+				let events: GoogleAppsScript.Calendar.Schema.Events = Calendar.Events.list(this._calendarId, {
+					syncToken: this._getNextSyncToken(),
+					maxResults: 2500,
+				})
+				this._eventList = events.items
+				this._setNextSyncToken(events.nextSyncToken)
+			}
+			catch (e) {
+				if (
+							e.name === 'GoogleJsonResponseException'
+							&& e.details.code === 410
+							&& e.details.errors[0].reason === 'fullSyncRequired'
+							&& e.details.errors[0].location === 'syncToken'
+							&& e.details.errors[0].domain === 'calendar'
+							&& e.details.errors[0].locationType === 'parameter'
+							&& e.details.errors[0].message === 'Sync token is no longer valid, a full sync is required.'
+				) {
+					console.log(e.details.errors[0].message)
+					console.log('Sync Token deleted. Please retry.')
+					this._properties.deleteProperty(PROP_KEY_PREFIX_SYNC_TOKEN + this._calendarId)
+				}
+			}
 		}
 		return this._eventList
 	}
